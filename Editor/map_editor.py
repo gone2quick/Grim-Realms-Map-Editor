@@ -133,8 +133,8 @@ class CombinedEditor(tk.Tk):
         self.canvas.bind("<Button-1>", self.paint)
         self.canvas.bind("<B1-Motion>", self.paint)
         self.canvas.bind("<MouseWheel>", self.zoom)
-        self.bind_all("<Down>", lambda e: self.scroll_map(0, self.scroll_step))
-        self.bind_all("<Up>", lambda e: self.scroll_map(0, -self.scroll_step))
+        self.bind_all("<Up>", lambda e: self.scroll_map(0, self.scroll_step))
+        self.bind_all("<Down>", lambda e: self.scroll_map(0, -self.scroll_step))
         self.bind_all("<Left>", lambda e: self.scroll_map(self.scroll_step, 0))
         self.bind_all("<Right>", lambda e: self.scroll_map(-self.scroll_step, 0))
 
