@@ -68,7 +68,7 @@ def render_biome(grid):
             if isinstance(cell,tuple): biome,mod=cell
             else: biome,mod=cell,None
             color = biome_colors.get(biome,(100,100,100))
-            if mod==12:  # Dreadlands modifier overlay
+            if mod==12:
                 r,g,b=color
                 color = (int(r*0.5+90*0.5),int(g*0.5+0*0.5),int(b*0.5+120*0.5))
             pixels[x,y]=color
@@ -98,7 +98,8 @@ def save_grid(grid, path):
 class CombinedEditor(tk.Tk):
     def __init__(self, biome_grid, region_grid, greater_region_grid, region_names, greater_names):
         super().__init__()
-        self.title("Combined Biome/Region Editor")
+        self.title("Grim Realms World Editor")  # updated app name
+
         self.biome_grid = biome_grid
         self.region_grid = region_grid
         self.greater_region_grid = greater_region_grid
@@ -106,14 +107,16 @@ class CombinedEditor(tk.Tk):
         self.greater_names = greater_names
 
         self.scale = scale_default
-        self.current_biome = 10
-        self.current_region = 0
+
+        # --- Startup selections: No Selection by default ---
+        self.current_biome = None
+        self.current_region = None
         self.current_biome_modifier = None
-        self.current_greater_region = 0
+        self.current_greater_region = None
+
         self.brush_size = 1
         self.highlight_greater_region = None
 
-        # image position offset on canvas (pixels)
         self.img_pos_x = 0
         self.img_pos_y = 0
 
@@ -122,21 +125,19 @@ class CombinedEditor(tk.Tk):
         self.tk_img = None
         self.canvas_img = None
 
-        # arrow scroll step (pixels)
         self.scroll_step = 50
 
         self.update_image()
 
-        # Bindings
+        # Bindings (reversed)
         self.canvas.bind("<Button-1>", self.paint)
         self.canvas.bind("<B1-Motion>", self.paint)
         self.canvas.bind("<MouseWheel>", self.zoom)
-        self.bind_all("<Down>", lambda e: self.scroll_map(0, -self.scroll_step))
-        self.bind_all("<Up>", lambda e: self.scroll_map(0, self.scroll_step))
-        self.bind_all("<Left>", lambda e: self.scroll_map(-self.scroll_step, 0))
-        self.bind_all("<Right>", lambda e: self.scroll_map(self.scroll_step, 0))
+        self.bind_all("<Down>", lambda e: self.scroll_map(0, self.scroll_step))
+        self.bind_all("<Up>", lambda e: self.scroll_map(0, -self.scroll_step))
+        self.bind_all("<Left>", lambda e: self.scroll_map(self.scroll_step, 0))
+        self.bind_all("<Right>", lambda e: self.scroll_map(-self.scroll_step, 0))
 
-        # Tooltip
         self.tooltip = tk.Toplevel(self.canvas)
         self.tooltip.withdraw()
         self.tooltip.overrideredirect(True)
@@ -149,13 +150,13 @@ class CombinedEditor(tk.Tk):
 
     def create_menu(self):
         menubar = tk.Menu(self)
+
         # Tools
         tools_menu = tk.Menu(menubar, tearoff=0)
         brush_menu = tk.Menu(tools_menu, tearoff=0)
         for s in range(1,6):
             brush_menu.add_command(label=str(s), command=lambda s=s: setattr(self,"brush_size",s))
         tools_menu.add_cascade(label="Brush Size", menu=brush_menu)
-        # Highlight Greater Region
         highlight_menu = tk.Menu(tools_menu, tearoff=0)
         for i,name in enumerate(self.greater_names):
             highlight_menu.add_command(label=name, command=lambda g=i: self.set_highlight_greater(g))
@@ -165,27 +166,29 @@ class CombinedEditor(tk.Tk):
 
         # Regions
         regions_menu = tk.Menu(menubar, tearoff=0)
+        regions_menu.add_command(label="No Selection", command=lambda:self.set_region(None))
         for i,name in enumerate(self.region_names):
             regions_menu.add_command(label=name, command=lambda r=i:self.set_region(r))
         menubar.add_cascade(label="Regions", menu=regions_menu)
 
         # Greater Regions
         greater_menu = tk.Menu(menubar, tearoff=0)
+        greater_menu.add_command(label="No Selection", command=lambda:self.set_greater_region(None))
         for i,name in enumerate(self.greater_names):
             greater_menu.add_command(label=name, command=lambda g=i:self.set_greater_region(g))
         greater_menu.add_command(label="Clear Greater Region", command=lambda:self.set_greater_region(-4))
         menubar.add_cascade(label="Greater Regions", menu=greater_menu)
 
-        # Biomes (no Dreadlands listed as base)
+        # Biomes
         biomes_menu = tk.Menu(menubar, tearoff=0)
+        biomes_menu.add_command(label="No Selection", command=lambda:self.set_biome(None))
         for b,name in biome_names.items():
             biomes_menu.add_command(label=name, command=lambda b=b:self.set_biome(b))
-        biomes_menu.add_separator()
-        biomes_menu.add_command(label="No Biome (keep current)", command=lambda:self.set_biome(None))
         menubar.add_cascade(label="Biomes", menu=biomes_menu)
 
         # Biome Modifiers
         biome_mod_menu = tk.Menu(menubar, tearoff=0)
+        biome_mod_menu.add_command(label="No Selection", command=lambda:self.set_biome_modifier(None))
         biome_mod_menu.add_command(label="Dreadlands", command=lambda:self.set_biome_modifier(12))
         biome_mod_menu.add_separator()
         biome_mod_menu.add_command(label="Erase Modifier", command=lambda:self.set_biome_modifier("erase"))
@@ -228,25 +231,28 @@ class CombinedEditor(tk.Tk):
             for dy in range(-size+1,size):
                 nx,ny = x+dx, y+dy
                 if 0<=nx<self.biome_grid.shape[1] and 0<=ny<self.biome_grid.shape[0]:
+                    # Biome Modifier logic
                     if self.current_biome_modifier == "erase":
                         cell = self.biome_grid[ny,nx]
                         if isinstance(cell, tuple):
-                            self.biome_grid[ny,nx] = cell[0]  # remove modifier, keep base biome
+                            self.biome_grid[ny,nx] = cell[0]
                     elif self.current_biome_modifier is not None:
-                        # if No Biome selected, keep current biome and only add modifier
+                        base = self.biome_grid[ny,nx]
+                        base_val = base[0] if isinstance(base, tuple) else base
                         if self.current_biome is None:
-                            base = self.biome_grid[ny,nx]
-                            base_val = base[0] if isinstance(base, tuple) else base
                             self.biome_grid[ny,nx] = (base_val, self.current_biome_modifier)
                         else:
                             self.biome_grid[ny,nx] = (self.current_biome, self.current_biome_modifier)
                     else:
                         if self.current_biome is not None:
                             self.biome_grid[ny,nx] = self.current_biome
-                    self.region_grid[ny,nx] = self.current_region
-                    if self.current_greater_region == -4:
-                        self.greater_region_grid[ny,nx] = -4
-                    else:
+
+                    # Regions
+                    if self.current_region is not None:
+                        self.region_grid[ny,nx] = self.current_region
+
+                    # Greater Regions
+                    if self.current_greater_region is not None:
                         self.greater_region_grid[ny,nx] = self.current_greater_region
         self.update_image()
 
@@ -269,7 +275,6 @@ class CombinedEditor(tk.Tk):
             text += f" | Biome: {biome_names[b]}({b})"
             if m is not None and m==12:
                 text += f" | Biome Mod: Dreadlands"
-
         if text:
             self.tooltip_label.config(text=text)
             self.tooltip.geometry(f"+{event.x_root+10}+{event.y_root+10}")
@@ -297,18 +302,15 @@ class CombinedEditor(tk.Tk):
             img_b = img_b.convert("RGBA")
             img_b = Image.alpha_composite(img_b, overlay)
             img_b = img_b.convert("RGB")
-
         w_px = int(self.biome_grid.shape[1]*self.scale)
         h_px = int(self.biome_grid.shape[0]*self.scale)
         img_b = img_b.resize((w_px, h_px), Image.Resampling.NEAREST)
         self.tk_img = ImageTk.PhotoImage(img_b)
-
         if self.canvas_img is None:
             self.canvas_img = self.canvas.create_image(self.img_pos_x, self.img_pos_y, anchor="nw", image=self.tk_img)
         else:
             self.canvas.itemconfig(self.canvas_img, image=self.tk_img)
             self.canvas.coords(self.canvas_img, self.img_pos_x, self.img_pos_y)
-
         self.canvas.config(scrollregion=(self.img_pos_x, self.img_pos_y, self.img_pos_x + w_px, self.img_pos_y + h_px))
 
     # --- Save ---
