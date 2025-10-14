@@ -2,7 +2,9 @@
 The First and only Map Editor for Grim Realms 
 
 Step 1: Download the .zip and extract it anywhere.
+
 Step 2: Open the world folder you want to modify, then copy the .save files into the same folder as the .py script.
+
 Step 3: Double-click the .bat file to run the script.
 
 # Tutorial
