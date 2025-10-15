@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
-import numpy as np, re, random, os
+import numpy as np, re, random, os, sys
 from PIL import Image, ImageTk
 
 # --- CONFIG ---
@@ -73,15 +73,23 @@ def select_world_popup(worlds):
     return selected["name"]
 
 # --- Select world at startup ---
-worlds = list_worlds()
-if not worlds:
-    messagebox.showerror("No Worlds Found","No world folders found in Worlds/")
-    exit()
+cli_world = None
+if "--world" in sys.argv:
+    idx = sys.argv.index("--world")
+    if idx+1 < len(sys.argv):
+        cli_world = sys.argv[idx+1]
 
-selected_world = select_world_popup(worlds)
-if not selected_world:
-    messagebox.showinfo("No Selection", "No world selected. Exiting.")
-    exit()
+if cli_world and cli_world in list_worlds():
+    selected_world = cli_world
+else:
+    worlds = list_worlds()
+    if not worlds:
+        messagebox.showerror("No Worlds Found","No world folders found in Worlds/")
+        exit()
+    selected_world = select_world_popup(worlds)
+    if not selected_world:
+        messagebox.showinfo("No Selection", "No world selected. Exiting.")
+        exit()
 
 WORLD_PATH = get_world_path(selected_world)
 
@@ -262,6 +270,7 @@ class CombinedEditor(tk.Tk):
         # File
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="Save", command=self.save_all)
+        file_menu.add_command(label="Switch World", command=self.switch_world)
         menubar.add_cascade(label="File", menu=file_menu)
 
         self.config(menu=menubar)
@@ -383,7 +392,13 @@ class CombinedEditor(tk.Tk):
         save_grid(self.biome_grid, biome_grid_path)
         save_grid(self.region_grid, region_grid_path)
         save_grid(self.greater_region_grid, greater_region_grid_path)
-        messagebox.showinfo("Saved","All three grids have been saved!")
+        messagebox.showinfo("Saved","All grids have been saved!")
+
+    # --- Switch World ---
+    def switch_world(self):
+        # Close current editor and fully restart script
+        self.destroy()
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
 # --- RUN ---
 biome_grid = load_grid(biome_grid_path)
