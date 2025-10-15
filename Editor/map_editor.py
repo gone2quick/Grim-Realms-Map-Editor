@@ -181,7 +181,7 @@ class CombinedEditor(tk.Tk):
         self.scroll_speed = 10
         self.pressed_keys = set()
 
-        self.canvas = tk.Canvas(self, bg="#0F3764")
+        self.canvas = tk.Canvas(self, bg="#0D315A")
         self.canvas.pack(fill="both", expand=True)
         self.tk_img = None
         self.canvas_img = None
