@@ -16,12 +16,80 @@ biome_names = {
     11:"Shallow Water"
 }
 
-region_grid_path = "regionGrid.save"
-biome_grid_path = "biomeGrid.save"
-greater_region_grid_path = "greaterRegionGrid.save"
-lore_path = "Lore.save"
 column_height = 224
 scale_default = 4
+
+# --- WORLD PATHS ---
+GRIM_REALMS_ROOT = os.path.dirname(os.path.abspath(__file__))
+WORLDS_FOLDER = os.path.join(GRIM_REALMS_ROOT, "Worlds")
+
+def list_worlds():
+    return [f for f in os.listdir(WORLDS_FOLDER) if os.path.isdir(os.path.join(WORLDS_FOLDER,f))]
+
+def get_world_path(world_name):
+    return os.path.join(WORLDS_FOLDER, world_name)
+
+# --- Paginated world selection ---
+def select_world_popup(worlds):
+    selected = {"name": None}
+    current_page = {"index": 0}
+    per_page = 6  # 2 columns × 3 rows
+
+    def show_page():
+        for widget in popup.winfo_children():
+            widget.destroy()  # clear old buttons
+        start = current_page["index"] * per_page
+        end = min(start + per_page, len(worlds))
+        page_worlds = worlds[start:end]
+
+        tk.Label(popup, text="Click a world to load:", font=("Arial", 12)).grid(row=0, column=0, columnspan=2, pady=10)
+
+        for i, w in enumerate(page_worlds):
+            row = i // 2 + 1
+            col = i % 2
+            btn = tk.Button(popup, text=w, width=20, command=lambda w=w: choose(w))
+            btn.grid(row=row, column=col, padx=5, pady=5)
+
+        # Navigation buttons
+        nav_frame = tk.Frame(popup)
+        nav_frame.grid(row=4, column=0, columnspan=2, pady=10)
+        if current_page["index"] > 0:
+            tk.Button(nav_frame, text="Back", command=lambda: change_page(-1)).pack(side="left", padx=5)
+        if end < len(worlds):
+            tk.Button(nav_frame, text="Next", command=lambda: change_page(1)).pack(side="right", padx=5)
+
+    def change_page(delta):
+        current_page["index"] += delta
+        show_page()
+
+    def choose(world_name):
+        selected["name"] = world_name
+        popup.destroy()
+
+    popup = tk.Tk()
+    popup.title("Select World")
+    show_page()
+    popup.mainloop()
+    return selected["name"]
+
+# --- Select world at startup ---
+worlds = list_worlds()
+if not worlds:
+    messagebox.showerror("No Worlds Found","No world folders found in Worlds/")
+    exit()
+
+selected_world = select_world_popup(worlds)
+if not selected_world:
+    messagebox.showinfo("No Selection", "No world selected. Exiting.")
+    exit()
+
+WORLD_PATH = get_world_path(selected_world)
+
+# --- File paths ---
+biome_grid_path = os.path.join(WORLD_PATH, "biomeGrid.save")
+region_grid_path = os.path.join(WORLD_PATH, "regionGrid.save")
+greater_region_grid_path = os.path.join(WORLD_PATH, "greaterRegionGrid.save")
+lore_path = os.path.join(WORLD_PATH, "Lore.save")
 
 # --- HELPERS ---
 def load_grid(path, height_override=None):
@@ -54,9 +122,6 @@ def load_lore_titles(path):
         match = re.search(rf'"{section}"\s*:\s*\{{.*?"title"\s*:\s*\[(.*?)\]', text,re.DOTALL)
         return re.findall(r'"(.*?)"', match.group(1)) if match else []
     return {"regions": extract("regions"),"greaterRegions": extract("greaterRegions")}
-
-def generate_colors(num):
-    return {i:(random.randint(50,255),random.randint(50,255),random.randint(50,255)) for i in range(max(1,num))}
 
 def render_biome(grid):
     h,w = grid.shape
@@ -94,11 +159,11 @@ def save_grid(grid, path):
     with open(path,"w",encoding="utf-8") as f:
         f.write("[" + ",".join(tiles) + "]")
 
-# --- EDITOR ---
+# --- EDITOR CLASS ---
 class CombinedEditor(tk.Tk):
     def __init__(self, biome_grid, region_grid, greater_region_grid, region_names, greater_names):
         super().__init__()
-        self.title("Grim Realms World Editor")  # updated app name
+        self.title(f"Grim Realms World Editor - {selected_world}")
 
         self.biome_grid = biome_grid
         self.region_grid = region_grid
@@ -108,7 +173,7 @@ class CombinedEditor(tk.Tk):
 
         self.scale = scale_default
 
-        # --- Startup selections: No Selection by default ---
+        # Startup selections
         self.current_biome = None
         self.current_region = None
         self.current_biome_modifier = None
@@ -126,10 +191,9 @@ class CombinedEditor(tk.Tk):
         self.canvas_img = None
 
         self.scroll_step = 50
-
         self.update_image()
 
-        # Bindings (reversed)
+        # Bindings
         self.canvas.bind("<Button-1>", self.paint)
         self.canvas.bind("<B1-Motion>", self.paint)
         self.canvas.bind("<MouseWheel>", self.zoom)
@@ -148,6 +212,7 @@ class CombinedEditor(tk.Tk):
 
         self.create_menu()
 
+    # --- Menu ---
     def create_menu(self):
         menubar = tk.Menu(self)
 
