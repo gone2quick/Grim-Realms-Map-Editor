@@ -3,7 +3,6 @@ from tkinter import messagebox
 import numpy as np, re, random, os, sys
 from PIL import Image, ImageTk
 
-# --- CONFIG ---
 biome_colors = {
     0: (245, 196, 110), 1: (204, 174, 77), 2: (66, 135, 40),
     3: (184, 179, 82), 4: (119, 155, 70), 5: (70, 128, 70),
@@ -18,7 +17,6 @@ biome_names = {
 column_height = 224
 scale_default = 4
 
-# --- WORLD PATHS ---
 GRIM_REALMS_ROOT = os.path.dirname(os.path.abspath(__file__))
 WORLDS_FOLDER = os.path.join(GRIM_REALMS_ROOT, "Worlds")
 
@@ -28,7 +26,6 @@ def list_worlds():
 def get_world_path(world_name):
     return os.path.join(WORLDS_FOLDER, world_name)
 
-# --- Paginated world selection ---
 def select_world_popup(worlds):
     selected = {"name": None}
     current_page = {"index": 0}
@@ -70,7 +67,6 @@ def select_world_popup(worlds):
     popup.mainloop()
     return selected["name"]
 
-# --- Select world at startup ---
 cli_world = None
 if "--world" in sys.argv:
     idx = sys.argv.index("--world")
@@ -91,13 +87,11 @@ else:
 
 WORLD_PATH = get_world_path(selected_world)
 
-# --- File paths ---
 biome_grid_path = os.path.join(WORLD_PATH, "biomeGrid.save")
 region_grid_path = os.path.join(WORLD_PATH, "regionGrid.save")
 greater_region_grid_path = os.path.join(WORLD_PATH, "greaterRegionGrid.save")
 lore_path = os.path.join(WORLD_PATH, "Lore.save")
 
-# --- HELPERS ---
 def load_grid(path, height_override=None):
     if not os.path.exists(path):
         return np.zeros((height_override, 256), dtype=object) if height_override else np.zeros((256,256), dtype=object)
@@ -165,7 +159,6 @@ def save_grid(grid, path):
     with open(path,"w",encoding="utf-8") as f:
         f.write("[" + ",".join(tiles) + "]")
 
-# --- EDITOR CLASS ---
 class CombinedEditor(tk.Tk):
     def __init__(self, biome_grid, region_grid, greater_region_grid, region_names, greater_names):
         super().__init__()
@@ -193,13 +186,11 @@ class CombinedEditor(tk.Tk):
         self.tk_img = None
         self.canvas_img = None
 
-        # --- Keyboard scrolling ---
         for key in ["Up","Down","Left","Right","w","a","s","d","W","A","S","D"]:
             self.bind_all(f"<KeyPress-{key}>", lambda e, k=key: self.pressed_keys.add(k))
             self.bind_all(f"<KeyRelease-{key}>", lambda e, k=key: self.pressed_keys.discard(k))
         self.update_scroll()
 
-        # --- Middle-click dragging ---
         self.middle_dragging = False
         self.last_drag_x = 0
         self.last_drag_y = 0
@@ -210,7 +201,6 @@ class CombinedEditor(tk.Tk):
         self.canvas.bind("<B2-Motion>", self.middle_drag)
         self.canvas.bind("<ButtonRelease-2>", self.end_middle_drag)
 
-        # --- Tooltip ---
         self.tooltip = tk.Toplevel(self.canvas)
         self.tooltip.withdraw()
         self.tooltip.overrideredirect(True)
@@ -222,7 +212,6 @@ class CombinedEditor(tk.Tk):
         self.update_image()
         self.create_menu()
 
-    # --- Continuous scroll ---
     def update_scroll(self):
         dx = dy = 0
         for key in self.pressed_keys:
@@ -238,7 +227,6 @@ class CombinedEditor(tk.Tk):
             self.scroll_map(dx, dy)
         self.after(16, self.update_scroll)
 
-    # --- Painting ---
     def _event_to_tile(self, event):
         ex = self.canvas.canvasx(event.x)
         ey = self.canvas.canvasy(event.y)
@@ -273,7 +261,6 @@ class CombinedEditor(tk.Tk):
                         self.greater_region_grid[ny, nx] = self.current_greater_region
         self.update_image()
 
-    # --- Tooltip ---
     def show_tooltip(self, event):
         x, y = self._event_to_tile(event)
         text = ""
@@ -294,7 +281,6 @@ class CombinedEditor(tk.Tk):
         else:
             self.tooltip.withdraw()
 
-    # --- Zoom (mouse-centered) ---
     def zoom(self, event):
         if hasattr(event, "delta"):
             factor = 1.05 if event.delta > 0 else 0.95
@@ -302,21 +288,15 @@ class CombinedEditor(tk.Tk):
             factor = 1.05 if event.num == 4 else 0.95
         else:
             factor = 1.0
-
         mouse_x = self.canvas.canvasx(event.x)
         mouse_y = self.canvas.canvasy(event.y)
-
         world_x = (mouse_x - self.img_pos_x) / self.scale
         world_y = (mouse_y - self.img_pos_y) / self.scale
-
         self.scale *= factor
-
         self.img_pos_x = mouse_x - world_x * self.scale
         self.img_pos_y = mouse_y - world_y * self.scale
-
         self.update_image()
 
-    # --- Update Image ---
     def update_image(self):
         img_b = render_biome(self.biome_grid)
         if self.highlight_greater_region is not None:
@@ -342,14 +322,12 @@ class CombinedEditor(tk.Tk):
             self.canvas.coords(self.canvas_img, self.img_pos_x, self.img_pos_y)
         self.canvas.config(scrollregion=(self.img_pos_x, self.img_pos_y, self.img_pos_x + w_px, self.img_pos_y + h_px))
 
-    # --- Map movement ---
     def scroll_map(self, dx, dy):
         self.img_pos_x += dx
         self.img_pos_y += dy
         if self.canvas_img is not None:
             self.canvas.coords(self.canvas_img, self.img_pos_x, self.img_pos_y)
 
-    # --- Middle-click drag ---
     def start_middle_drag(self, event):
         self.middle_dragging = True
         self.last_drag_x = event.x
@@ -366,30 +344,25 @@ class CombinedEditor(tk.Tk):
     def end_middle_drag(self, event):
         self.middle_dragging = False
 
-    # --- Setters ---
     def set_biome(self, b): self.current_biome = b
     def set_region(self, r): self.current_region = r
     def set_biome_modifier(self, m): self.current_biome_modifier = m
     def set_greater_region(self, g): self.current_greater_region = g
     def set_highlight_greater(self, g): self.highlight_greater_region = g; self.update_image()
 
-    # --- Save ---
     def save_all(self):
         save_grid(self.biome_grid, biome_grid_path)
         save_grid(self.region_grid, region_grid_path)
         save_grid(self.greater_region_grid, greater_region_grid_path)
         messagebox.showinfo("Saved", "All grids have been saved!")
 
-    # --- Switch World ---
     def switch_world(self):
         self.destroy()
         os.execl(sys.executable, sys.executable, *sys.argv)
 
-    # --- Menu ---
     def create_menu(self):
         menubar = tk.Menu(self)
 
-        # Tools
         tools_menu = tk.Menu(menubar, tearoff=0)
         brush_menu = tk.Menu(tools_menu, tearoff=0)
         for s in range(1,6):
@@ -403,14 +376,12 @@ class CombinedEditor(tk.Tk):
         tools_menu.add_cascade(label="Highlight Greater Region", menu=highlight_menu)
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
-        # Regions
         regions_menu = tk.Menu(menubar, tearoff=0)
         regions_menu.add_command(label="No Selection", command=lambda:self.set_region(None))
         for i,name in enumerate(self.region_names):
             regions_menu.add_command(label=name, command=lambda r=i:self.set_region(r))
         menubar.add_cascade(label="Regions", menu=regions_menu)
 
-        # Greater Regions
         greater_menu = tk.Menu(menubar, tearoff=0)
         greater_menu.add_command(label="No Selection", command=lambda:self.set_greater_region(None))
         for i,name in enumerate(self.greater_names):
@@ -418,14 +389,12 @@ class CombinedEditor(tk.Tk):
         greater_menu.add_command(label="Clear Greater Region", command=lambda:self.set_greater_region(-4))
         menubar.add_cascade(label="Greater Regions", menu=greater_menu)
 
-        # Biomes
         biomes_menu = tk.Menu(menubar, tearoff=0)
         biomes_menu.add_command(label="No Selection", command=lambda:self.set_biome(None))
         for b,name in biome_names.items():
             biomes_menu.add_command(label=name, command=lambda b=b:self.set_biome(b))
         menubar.add_cascade(label="Biomes", menu=biomes_menu)
 
-        # Biome Modifiers
         biome_mod_menu = tk.Menu(menubar, tearoff=0)
         biome_mod_menu.add_command(label="No Selection", command=lambda:self.set_biome_modifier(None))
         biome_mod_menu.add_command(label="Dreadlands", command=lambda:self.set_biome_modifier(12))
@@ -433,7 +402,6 @@ class CombinedEditor(tk.Tk):
         biome_mod_menu.add_command(label="Erase Modifier", command=lambda:self.set_biome_modifier("erase"))
         menubar.add_cascade(label="Biome Modifiers", menu=biome_mod_menu)
 
-        # File
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="Save", command=self.save_all)
         file_menu.add_command(label="Switch World", command=self.switch_world)
@@ -441,7 +409,6 @@ class CombinedEditor(tk.Tk):
 
         self.config(menu=menubar)
 
-# --- RUN ---
 biome_grid = load_grid(biome_grid_path)
 region_grid = load_grid(region_grid_path, column_height)
 greater_region_grid = load_grid(greater_region_grid_path, column_height)
