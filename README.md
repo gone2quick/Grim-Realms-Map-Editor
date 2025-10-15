@@ -29,7 +29,7 @@ File – Used to save your modified map once you’re done editing.
 
 # Controls
 
-Arrow Keys: Move around the map.
+Arrow Keys, WASD, Middle Mouse: Move around the map.
 
 Mouse: Use to paint tiles and zoom in/out.
 
