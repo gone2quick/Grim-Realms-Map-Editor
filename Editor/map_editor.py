@@ -11,11 +11,10 @@ biome_colors = {
     9: (245, 245, 255), 10: (15, 55, 100), 11: (39, 75, 116)
 }
 biome_names = {
-    0:"Desert",1:"Savanna",2:"Jungle",3:"Grassland",4:"Woodland",5:"Lush Forest",
-    6:"Swamp",7:"Boreal Forest",8:"Hills",9:"Mountains",10:"Deep Water",
+    0:"Desert",1:"Savanna",2:"Jungle",3:"Grassland",4:"Woodland",5:"???", 
+    6:"Swamp",7:"Taiga",8:"Hills",9:"Mountains",10:"Deep Water", 
     11:"Shallow Water"
 }
-
 column_height = 224
 scale_default = 4
 
@@ -33,11 +32,11 @@ def get_world_path(world_name):
 def select_world_popup(worlds):
     selected = {"name": None}
     current_page = {"index": 0}
-    per_page = 6  # 2 columns × 3 rows
+    per_page = 6
 
     def show_page():
         for widget in popup.winfo_children():
-            widget.destroy()  # clear old buttons
+            widget.destroy()
         start = current_page["index"] * per_page
         end = min(start + per_page, len(worlds))
         page_worlds = worlds[start:end]
@@ -50,7 +49,6 @@ def select_world_popup(worlds):
             btn = tk.Button(popup, text=w, width=20, command=lambda w=w: choose(w))
             btn.grid(row=row, column=col, padx=5, pady=5)
 
-        # Navigation buttons
         nav_frame = tk.Frame(popup)
         nav_frame.grid(row=4, column=0, columnspan=2, pady=10)
         if current_page["index"] > 0:
@@ -84,7 +82,7 @@ if cli_world and cli_world in list_worlds():
 else:
     worlds = list_worlds()
     if not worlds:
-        messagebox.showerror("No Worlds Found","No world folders found in Worlds/")
+        messagebox.showerror("No Worlds Found","No Worlds found in Worlds Folder")
         exit()
     selected_world = select_world_popup(worlds)
     if not selected_world:
@@ -172,44 +170,47 @@ class CombinedEditor(tk.Tk):
     def __init__(self, biome_grid, region_grid, greater_region_grid, region_names, greater_names):
         super().__init__()
         self.title(f"Grim Realms World Editor - {selected_world}")
-
         self.biome_grid = biome_grid
         self.region_grid = region_grid
         self.greater_region_grid = greater_region_grid
         self.region_names = region_names
         self.greater_names = greater_names
-
         self.scale = scale_default
-
-        # Startup selections
         self.current_biome = None
         self.current_region = None
         self.current_biome_modifier = None
         self.current_greater_region = None
-
         self.brush_size = 1
         self.highlight_greater_region = None
-
         self.img_pos_x = 0
         self.img_pos_y = 0
+        self.scroll_step = 50
+        self.scroll_speed = 10
+        self.pressed_keys = set()
 
-        self.canvas = tk.Canvas(self,bg="black")
-        self.canvas.pack(fill="both",expand=True)
+        self.canvas = tk.Canvas(self, bg="#0F3764")
+        self.canvas.pack(fill="both", expand=True)
         self.tk_img = None
         self.canvas_img = None
 
-        self.scroll_step = 50
-        self.update_image()
+        # --- Keyboard scrolling ---
+        for key in ["Up","Down","Left","Right","w","a","s","d","W","A","S","D"]:
+            self.bind_all(f"<KeyPress-{key}>", lambda e, k=key: self.pressed_keys.add(k))
+            self.bind_all(f"<KeyRelease-{key}>", lambda e, k=key: self.pressed_keys.discard(k))
+        self.update_scroll()
 
-        # Bindings
+        # --- Middle-click dragging ---
+        self.middle_dragging = False
+        self.last_drag_x = 0
+        self.last_drag_y = 0
         self.canvas.bind("<Button-1>", self.paint)
         self.canvas.bind("<B1-Motion>", self.paint)
         self.canvas.bind("<MouseWheel>", self.zoom)
-        self.bind_all("<Up>", lambda e: self.scroll_map(0, self.scroll_step))
-        self.bind_all("<Down>", lambda e: self.scroll_map(0, -self.scroll_step))
-        self.bind_all("<Left>", lambda e: self.scroll_map(self.scroll_step, 0))
-        self.bind_all("<Right>", lambda e: self.scroll_map(-self.scroll_step, 0))
+        self.canvas.bind("<Button-2>", self.start_middle_drag)
+        self.canvas.bind("<B2-Motion>", self.middle_drag)
+        self.canvas.bind("<ButtonRelease-2>", self.end_middle_drag)
 
+        # --- Tooltip ---
         self.tooltip = tk.Toplevel(self.canvas)
         self.tooltip.withdraw()
         self.tooltip.overrideredirect(True)
@@ -218,7 +219,171 @@ class CombinedEditor(tk.Tk):
         self.canvas.bind("<Motion>", self.show_tooltip)
         self.canvas.bind("<Leave>", lambda e:self.tooltip.withdraw())
 
+        self.update_image()
         self.create_menu()
+
+    # --- Continuous scroll ---
+    def update_scroll(self):
+        dx = dy = 0
+        for key in self.pressed_keys:
+            if key in ["Left","a","A"]:
+                dx += self.scroll_speed
+            elif key in ["Right","d","D"]:
+                dx -= self.scroll_speed
+            elif key in ["Up","w","W"]:
+                dy += self.scroll_speed
+            elif key in ["Down","s","S"]:
+                dy -= self.scroll_speed
+        if dx != 0 or dy != 0:
+            self.scroll_map(dx, dy)
+        self.after(16, self.update_scroll)
+
+    # --- Painting ---
+    def _event_to_tile(self, event):
+        ex = self.canvas.canvasx(event.x)
+        ey = self.canvas.canvasy(event.y)
+        tile_x = int((ex - self.img_pos_x) / self.scale)
+        tile_y = int((ey - self.img_pos_y) / self.scale)
+        return tile_x, tile_y
+
+    def paint(self, event):
+        x, y = self._event_to_tile(event)
+        size = self.brush_size
+        for dx in range(-size+1, size):
+            for dy in range(-size+1, size):
+                nx, ny = x+dx, y+dy
+                if 0 <= nx < self.biome_grid.shape[1] and 0 <= ny < self.biome_grid.shape[0]:
+                    if self.current_biome_modifier == "erase":
+                        cell = self.biome_grid[ny, nx]
+                        if isinstance(cell, tuple):
+                            self.biome_grid[ny, nx] = cell[0]
+                    elif self.current_biome_modifier is not None:
+                        base = self.biome_grid[ny, nx]
+                        base_val = base[0] if isinstance(base, tuple) else base
+                        if self.current_biome is None:
+                            self.biome_grid[ny, nx] = (base_val, self.current_biome_modifier)
+                        else:
+                            self.biome_grid[ny, nx] = (self.current_biome, self.current_biome_modifier)
+                    else:
+                        if self.current_biome is not None:
+                            self.biome_grid[ny, nx] = self.current_biome
+                    if self.current_region is not None:
+                        self.region_grid[ny, nx] = self.current_region
+                    if self.current_greater_region is not None:
+                        self.greater_region_grid[ny, nx] = self.current_greater_region
+        self.update_image()
+
+    # --- Tooltip ---
+    def show_tooltip(self, event):
+        x, y = self._event_to_tile(event)
+        text = ""
+        if 0 <= x < self.biome_grid.shape[1] and 0 <= y < self.biome_grid.shape[0]:
+            b, m = self.biome_grid[y, x] if isinstance(self.biome_grid[y, x], tuple) else (self.biome_grid[y, x], None)
+            r_cell = self.region_grid[y, x]
+            r = r_cell if not isinstance(r_cell, tuple) else r_cell[0]
+            g = self.greater_region_grid[y, x]
+            text = f"Region: {self.region_names[r]}({r})"
+            text += f" | Greater Region: {self.greater_names[g]}({g})" if g != -4 else " | Greater Region: None"
+            text += f" | Biome: {biome_names[b]}({b})"
+            if m is not None and m == 12:
+                text += f" | Biome Mod: Dreadlands"
+        if text:
+            self.tooltip_label.config(text=text)
+            self.tooltip.geometry(f"+{event.x_root+10}+{event.y_root+10}")
+            self.tooltip.deiconify()
+        else:
+            self.tooltip.withdraw()
+
+    # --- Zoom (mouse-centered) ---
+    def zoom(self, event):
+        if hasattr(event, "delta"):
+            factor = 1.05 if event.delta > 0 else 0.95
+        elif hasattr(event, "num"):
+            factor = 1.05 if event.num == 4 else 0.95
+        else:
+            factor = 1.0
+
+        mouse_x = self.canvas.canvasx(event.x)
+        mouse_y = self.canvas.canvasy(event.y)
+
+        world_x = (mouse_x - self.img_pos_x) / self.scale
+        world_y = (mouse_y - self.img_pos_y) / self.scale
+
+        self.scale *= factor
+
+        self.img_pos_x = mouse_x - world_x * self.scale
+        self.img_pos_y = mouse_y - world_y * self.scale
+
+        self.update_image()
+
+    # --- Update Image ---
+    def update_image(self):
+        img_b = render_biome(self.biome_grid)
+        if self.highlight_greater_region is not None:
+            h, w = self.greater_region_grid.shape
+            overlay = Image.new("RGBA", (w, h), (0,0,0,0))
+            pixels = overlay.load()
+            for yy in range(h):
+                for xx in range(w):
+                    cell = self.greater_region_grid[yy, xx]
+                    if cell == self.highlight_greater_region and cell != -4:
+                        pixels[xx, yy] = (255,0,0,100)
+            img_b = img_b.convert("RGBA")
+            img_b = Image.alpha_composite(img_b, overlay)
+            img_b = img_b.convert("RGB")
+        w_px = int(self.biome_grid.shape[1] * self.scale)
+        h_px = int(self.biome_grid.shape[0] * self.scale)
+        img_b = img_b.resize((w_px, h_px), Image.Resampling.NEAREST)
+        self.tk_img = ImageTk.PhotoImage(img_b)
+        if self.canvas_img is None:
+            self.canvas_img = self.canvas.create_image(self.img_pos_x, self.img_pos_y, anchor="nw", image=self.tk_img)
+        else:
+            self.canvas.itemconfig(self.canvas_img, image=self.tk_img)
+            self.canvas.coords(self.canvas_img, self.img_pos_x, self.img_pos_y)
+        self.canvas.config(scrollregion=(self.img_pos_x, self.img_pos_y, self.img_pos_x + w_px, self.img_pos_y + h_px))
+
+    # --- Map movement ---
+    def scroll_map(self, dx, dy):
+        self.img_pos_x += dx
+        self.img_pos_y += dy
+        if self.canvas_img is not None:
+            self.canvas.coords(self.canvas_img, self.img_pos_x, self.img_pos_y)
+
+    # --- Middle-click drag ---
+    def start_middle_drag(self, event):
+        self.middle_dragging = True
+        self.last_drag_x = event.x
+        self.last_drag_y = event.y
+
+    def middle_drag(self, event):
+        if self.middle_dragging:
+            dx = event.x - self.last_drag_x
+            dy = event.y - self.last_drag_y
+            self.scroll_map(dx, dy)
+            self.last_drag_x = event.x
+            self.last_drag_y = event.y
+
+    def end_middle_drag(self, event):
+        self.middle_dragging = False
+
+    # --- Setters ---
+    def set_biome(self, b): self.current_biome = b
+    def set_region(self, r): self.current_region = r
+    def set_biome_modifier(self, m): self.current_biome_modifier = m
+    def set_greater_region(self, g): self.current_greater_region = g
+    def set_highlight_greater(self, g): self.highlight_greater_region = g; self.update_image()
+
+    # --- Save ---
+    def save_all(self):
+        save_grid(self.biome_grid, biome_grid_path)
+        save_grid(self.region_grid, region_grid_path)
+        save_grid(self.greater_region_grid, greater_region_grid_path)
+        messagebox.showinfo("Saved", "All grids have been saved!")
+
+    # --- Switch World ---
+    def switch_world(self):
+        self.destroy()
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
     # --- Menu ---
     def create_menu(self):
@@ -230,6 +395,7 @@ class CombinedEditor(tk.Tk):
         for s in range(1,6):
             brush_menu.add_command(label=str(s), command=lambda s=s: setattr(self,"brush_size",s))
         tools_menu.add_cascade(label="Brush Size", menu=brush_menu)
+
         highlight_menu = tk.Menu(tools_menu, tearoff=0)
         for i,name in enumerate(self.greater_names):
             highlight_menu.add_command(label=name, command=lambda g=i: self.set_highlight_greater(g))
@@ -275,135 +441,10 @@ class CombinedEditor(tk.Tk):
 
         self.config(menu=menubar)
 
-    # --- Map movement ---
-    def scroll_map(self, dx, dy):
-        self.img_pos_x += dx
-        self.img_pos_y += dy
-        if self.canvas_img is not None:
-            self.canvas.coords(self.canvas_img, self.img_pos_x, self.img_pos_y)
-
-    # --- Setters ---
-    def set_biome(self,b): self.current_biome=b
-    def set_region(self,r): self.current_region=r
-    def set_biome_modifier(self,m): self.current_biome_modifier=m
-    def set_greater_region(self,g): self.current_greater_region=g
-    def set_highlight_greater(self,g): self.highlight_greater_region=g; self.update_image()
-
-    # --- Convert mouse event to tile coords ---
-    def _event_to_tile(self, event):
-        ex = self.canvas.canvasx(event.x)
-        ey = self.canvas.canvasy(event.y)
-        tile_x = int((ex - self.img_pos_x) / self.scale)
-        tile_y = int((ey - self.img_pos_y) / self.scale)
-        return tile_x, tile_y
-
-    # --- Painting ---
-    def paint(self,event):
-        x, y = self._event_to_tile(event)
-        size = self.brush_size
-        for dx in range(-size+1,size):
-            for dy in range(-size+1,size):
-                nx,ny = x+dx, y+dy
-                if 0<=nx<self.biome_grid.shape[1] and 0<=ny<self.biome_grid.shape[0]:
-                    # Biome Modifier logic
-                    if self.current_biome_modifier == "erase":
-                        cell = self.biome_grid[ny,nx]
-                        if isinstance(cell, tuple):
-                            self.biome_grid[ny,nx] = cell[0]
-                    elif self.current_biome_modifier is not None:
-                        base = self.biome_grid[ny,nx]
-                        base_val = base[0] if isinstance(base, tuple) else base
-                        if self.current_biome is None:
-                            self.biome_grid[ny,nx] = (base_val, self.current_biome_modifier)
-                        else:
-                            self.biome_grid[ny,nx] = (self.current_biome, self.current_biome_modifier)
-                    else:
-                        if self.current_biome is not None:
-                            self.biome_grid[ny,nx] = self.current_biome
-
-                    # Regions
-                    if self.current_region is not None:
-                        self.region_grid[ny,nx] = self.current_region
-
-                    # Greater Regions
-                    if self.current_greater_region is not None:
-                        self.greater_region_grid[ny,nx] = self.current_greater_region
-        self.update_image()
-
-    # --- Tooltip ---
-    def show_tooltip(self,event):
-        x, y = self._event_to_tile(event)
-        text = ""
-        if 0<=x<self.biome_grid.shape[1] and 0<=y<self.biome_grid.shape[0]:
-            b,m = self.biome_grid[y,x] if isinstance(self.biome_grid[y,x],tuple) else (self.biome_grid[y,x],None)
-            r_cell = self.region_grid[y,x]
-            if isinstance(r_cell, tuple):
-                r, r_mod = r_cell
-            else:
-                r, r_mod = r_cell, None
-            g = self.greater_region_grid[y,x]
-            text = f"Region: {self.region_names[r]}({r})"
-            if r_mod is not None:
-                text += f" | Region Mod: {r_mod}"
-            text += f" | Greater Region: {self.greater_names[g]}({g})" if g!=-4 else " | Greater Region: None"
-            text += f" | Biome: {biome_names[b]}({b})"
-            if m is not None and m==12:
-                text += f" | Biome Mod: Dreadlands"
-        if text:
-            self.tooltip_label.config(text=text)
-            self.tooltip.geometry(f"+{event.x_root+10}+{event.y_root+10}")
-            self.tooltip.deiconify()
-        else:
-            self.tooltip.withdraw()
-
-    # --- Zoom & Image update ---
-    def zoom(self,event):
-        factor = 1.1 if getattr(event,'delta',1)>0 else 0.9
-        self.scale *= factor
-        self.update_image()
-
-    def update_image(self):
-        img_b = render_biome(self.biome_grid)
-        if self.highlight_greater_region is not None:
-            h, w = self.greater_region_grid.shape
-            overlay = Image.new("RGBA",(w,h),(0,0,0,0))
-            pixels = overlay.load()
-            for yy in range(h):
-                for xx in range(w):
-                    cell = self.greater_region_grid[yy,xx]
-                    if cell == self.highlight_greater_region and cell != -4:
-                        pixels[xx,yy] = (255,0,0,100)
-            img_b = img_b.convert("RGBA")
-            img_b = Image.alpha_composite(img_b, overlay)
-            img_b = img_b.convert("RGB")
-        w_px = int(self.biome_grid.shape[1]*self.scale)
-        h_px = int(self.biome_grid.shape[0]*self.scale)
-        img_b = img_b.resize((w_px, h_px), Image.Resampling.NEAREST)
-        self.tk_img = ImageTk.PhotoImage(img_b)
-        if self.canvas_img is None:
-            self.canvas_img = self.canvas.create_image(self.img_pos_x, self.img_pos_y, anchor="nw", image=self.tk_img)
-        else:
-            self.canvas.itemconfig(self.canvas_img, image=self.tk_img)
-            self.canvas.coords(self.canvas_img, self.img_pos_x, self.img_pos_y)
-        self.canvas.config(scrollregion=(self.img_pos_x, self.img_pos_y, self.img_pos_x + w_px, self.img_pos_y + h_px))
-
-    # --- Save ---
-    def save_all(self):
-        save_grid(self.biome_grid, biome_grid_path)
-        save_grid(self.region_grid, region_grid_path)
-        save_grid(self.greater_region_grid, greater_region_grid_path)
-        messagebox.showinfo("Saved","All grids have been saved!")
-
-    # --- Switch World ---
-    def switch_world(self):
-        # Close current editor and fully restart script
-        self.destroy()
-        os.execl(sys.executable, sys.executable, *sys.argv)
-
 # --- RUN ---
 biome_grid = load_grid(biome_grid_path)
-region_grid = load_grid(region_grid_path,column_height)
-greater_region_grid = load_grid(greater_region_grid_path,column_height)
+region_grid = load_grid(region_grid_path, column_height)
+greater_region_grid = load_grid(greater_region_grid_path, column_height)
 lore_data = load_lore_titles(lore_path)
 region_names = lore_data["regions"]
 greater_names = lore_data["greaterRegions"]
