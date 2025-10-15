@@ -1,7 +1,7 @@
 # Grim Realms Map Editor
 The First and only Map Editor for Grim Realms 
 
-Step 1: Download the .zip and extract it anywhere.
+Step 1: Download the .zip and extract it into the Grim Realms Folder where all game files are kept make sure its above the world folder otherwise it wont work.
 
 Step 2: Open the world folder you want to modify, then copy the .save files into the same folder as the .py script.
 
