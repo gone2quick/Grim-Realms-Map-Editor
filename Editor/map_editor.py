@@ -365,7 +365,7 @@ class CombinedEditor(tk.Tk):
 
         tools_menu = tk.Menu(menubar, tearoff=0)
         brush_menu = tk.Menu(tools_menu, tearoff=0)
-        for s in range(1,6):
+        for s in range(1,11):
             brush_menu.add_command(label=str(s), command=lambda s=s: setattr(self,"brush_size",s))
         tools_menu.add_cascade(label="Brush Size", menu=brush_menu)
 
