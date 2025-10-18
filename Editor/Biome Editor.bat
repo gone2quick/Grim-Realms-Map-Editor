@@ -21,6 +21,6 @@ $Shortcut.Save()
 
 echo Shortcut created: "%folder%%shortcutName%" with icon "%iconFile%"
 
-:: Use a delayed self-delete
 ping 127.0.0.1 -n 2 >nul
 del "%~f0"
+
