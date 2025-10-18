@@ -3,9 +3,9 @@ The First and only Map Editor for Grim Realms
 
 Step 1: Download the .zip and extract the .py and .bat into the Grim Realms Folder where all game files are kept make sure its in the parent folder to the World folder otherwise it wont work.
 
-Step 2: Open the world folder you want to modify, then copy the .save files into the same folder as the .py script.
+Step 2: Run the .bat that comes within the setup.
 
-Step 3: Double-click the .bat file to run the script.
+Step 3: move the shortcut to where ever you'd like.
 
 # Tutorial
 
