@@ -17,11 +17,32 @@ biome_names = {
 column_height = 224
 scale_default = 4
 
+import os
+
+def resolve_shortcut(path):
+    """If 'path' is a Windows shortcut (.lnk), return its real target folder."""
+    if os.path.exists(path) and path.lower().endswith(".lnk"):
+        try:
+            import win32com.client
+            shell = win32com.client.Dispatch("WScript.Shell")
+            shortcut = shell.CreateShortcut(path)
+            return shortcut.Targetpath
+        except Exception:
+            pass
+    return path
+
+# Base directory where the script or EXE is located
 GRIM_REALMS_ROOT = os.path.dirname(os.path.abspath(__file__))
-WORLDS_FOLDER = os.path.join(GRIM_REALMS_ROOT, "Worlds")
+
+# Detect either 'Worlds' folder or 'Worlds.lnk' shortcut
+worlds_path = os.path.join(GRIM_REALMS_ROOT, "Worlds")
+if not os.path.exists(worlds_path) and os.path.exists(worlds_path + ".lnk"):
+    worlds_path = worlds_path + ".lnk"
+
+WORLDS_FOLDER = resolve_shortcut(worlds_path)
 
 def list_worlds():
-    return [f for f in os.listdir(WORLDS_FOLDER) if os.path.isdir(os.path.join(WORLDS_FOLDER,f))]
+    return [f for f in os.listdir(WORLDS_FOLDER) if os.path.isdir(os.path.join(WORLDS_FOLDER, f))]
 
 def get_world_path(world_name):
     return os.path.join(WORLDS_FOLDER, world_name)
